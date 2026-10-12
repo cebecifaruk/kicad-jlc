@@ -2,10 +2,16 @@
 
 import re
 from dataclasses import dataclass, field
-from typing import Dict, List, Sequence
+from typing import Dict, List, Sequence, TypeVar
 
+from google.protobuf.message import Message
 from kipy.board import Board
 from kipy.board_types import Field, FootprintInstance
+from kipy.common_types import Commit
+from kipy.proto.common.commands.editor_commands_pb2 import (
+    BeginCommit, BeginCommitResponse, CommitAction, EndCommit, EndCommitResponse,
+)
+from kipy.proto.common.types.base_types_pb2 import ItemHeader
 from kipy.proto.board.board_types_pb2 import BoardLayer, FootprintMountingStyle
 
 NM_PER_MM = 1_000_000
@@ -143,6 +149,76 @@ def _set_lcsc_field(fp: FootprintInstance, lcsc: str) -> bool:
     return True
 
 
+# ---- Commits addressed to the board -----------------------------------------
+#
+# Recent KiCad 10.0.x releases need to know which document a commit belongs to
+# when more than one editor is open (e.g. the schematic and the PCB editor):
+# otherwise they answer "BeginCommit without a document specified is not
+# allowed when multiple editors are open". Their API has a `header` field for
+# that in BeginCommit (field 1) and EndCommit (field 4), but kicad-python 0.8.0
+# is built from older definitions without it, and Board.begin_commit() doesn't
+# send the document. So the commands are sent here with the header added:
+# through the field if kicad-python knows it, otherwise as raw protobuf data
+# under the field number KiCad uses (unknown fields are kept and sent along).
+# Older KiCad versions without the field ignore it.
+
+BEGIN_COMMIT_HEADER_FIELD = 1
+END_COMMIT_HEADER_FIELD = 4
+
+M = TypeVar("M", bound=Message)
+
+
+def _varint(value: int) -> bytes:
+    out = bytearray()
+    while True:
+        byte = value & 0x7F
+        value >>= 7
+        if value:
+            out.append(byte | 0x80)
+        else:
+            out.append(byte)
+            return bytes(out)
+
+
+def _with_document(command: M, field_number: int, board: Board) -> M:
+    """Add an ItemHeader naming the board's document to `command`."""
+    header_field = command.DESCRIPTOR.fields_by_name.get("header")
+    if header_field is not None and header_field.number == field_number:
+        command.header.document.CopyFrom(board.document)
+        return command
+    header = ItemHeader()
+    header.document.CopyFrom(board.document)
+    payload = header.SerializeToString()
+    # Wire format of a length-delimited field: tag, length, bytes
+    command.MergeFromString(_varint(field_number << 3 | 2) + _varint(len(payload)) + payload)
+    return command
+
+
+def begin_commit(board: Board) -> Commit:
+    """board.begin_commit(), for this board's document."""
+    command = _with_document(BeginCommit(), BEGIN_COMMIT_HEADER_FIELD, board)
+    return Commit(board.client.send(command, BeginCommitResponse).id)
+
+
+def _end_commit(board: Board, commit: Commit, action: int, message: str = "") -> None:
+    command = EndCommit()
+    command.id.CopyFrom(commit.id)
+    command.action = action
+    command.message = message
+    _with_document(command, END_COMMIT_HEADER_FIELD, board)
+    board.client.send(command, EndCommitResponse)
+
+
+def push_commit(board: Board, commit: Commit, message: str = "") -> None:
+    """board.push_commit(), for this board's document."""
+    _end_commit(board, commit, CommitAction.CMA_COMMIT, message)
+
+
+def drop_commit(board: Board, commit: Commit) -> None:
+    """board.drop_commit(), for this board's document."""
+    _end_commit(board, commit, CommitAction.CMA_DROP)
+
+
 def assign_lcsc(board: Board, components: Sequence[Component], lcsc: str) -> List[str]:
     """Write `lcsc` to the LCSC field of each component as one undoable step
     ("" clears the field).
@@ -160,12 +236,12 @@ def assign_lcsc(board: Board, components: Sequence[Component], lcsc: str) -> Lis
         return []
 
     references = sorted((fp.reference_field.text.value for fp in footprints), key=natural_key)
-    commit = board.begin_commit()
+    commit = begin_commit(board)
     try:
         board.update_items(footprints)
     except Exception:
-        board.drop_commit(commit)
+        drop_commit(board, commit)
         raise
     action = f"Assign LCSC {lcsc} to" if lcsc else "Clear LCSC of"
-    board.push_commit(commit, f"{action} {', '.join(references)}")
+    push_commit(board, commit, f"{action} {', '.join(references)}")
     return references
