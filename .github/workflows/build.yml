@@ -44,31 +44,14 @@ jobs:
             exit 1
           fi
 
-      - name: Validate against KiCad's schemas
-        run: |
-          pip install jsonschema
-          curl -fsSL -o plugin.schema.json https://gitlab.com/kicad/code/kicad/-/raw/master/api/schemas/api.v1.schema.json
-          curl -fsSL -o pcm.schema.json https://go.kicad.org/pcm/schemas/v2
-          python - <<'EOF'
-          import json, jsonschema
-          load = lambda path: json.load(open(path, encoding="utf-8"))
-          jsonschema.validate(load("plugin.json"), load("plugin.schema.json"))
-          print("plugin.json matches KiCad's plugin schema")
-          # The PCM schema describes a single package under definitions/Package.
-          schema = dict(load("pcm.schema.json"), **{"$ref": "#/definitions/Package"})
-          metadata = load("packaging/metadata.json")
-          metadata["versions"][0].update(version="0.0.0", install_size=0)
-          jsonschema.validate(metadata, schema)
-          print("packaging/metadata.json matches KiCad's PCM schema")
-          EOF
-          rm plugin.schema.json pcm.schema.json
-
       - name: Build package
         run: |
+          # KiCad's PCM only accepts numeric versions (^\d{1,4}(\.\d{1,4}(\.\d{1,6})?)?$),
+          # so untagged builds are 0.0.<run number>, below any real release.
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             VERSION="${GITHUB_REF_NAME#v}"
           else
-            VERSION="0.0.0-dev.${GITHUB_RUN_NUMBER}"
+            VERSION="0.0.${GITHUB_RUN_NUMBER}"
           fi
 
           rm -rf build && mkdir -p build/plugins build/resources dist
@@ -85,6 +68,24 @@ jobs:
 
           (cd build && zip -qr "../dist/kicad-jlc-${VERSION}.zip" metadata.json plugins resources)
           unzip -l "dist/kicad-jlc-${VERSION}.zip"
+
+      # Validates the files that ship, so a version KiCad would reject fails here.
+      - name: Validate against KiCad's schemas
+        run: |
+          pip install jsonschema
+          curl -fsSL -o plugin.schema.json https://gitlab.com/kicad/code/kicad/-/raw/master/api/schemas/api.v1.schema.json
+          curl -fsSL -o pcm.schema.json https://go.kicad.org/pcm/schemas/v2
+          python - <<'EOF'
+          import json, jsonschema
+          load = lambda path: json.load(open(path, encoding="utf-8"))
+          jsonschema.validate(load("build/plugins/plugin.json"), load("plugin.schema.json"))
+          print("plugin.json matches KiCad's plugin schema")
+          # The PCM schema describes a single package under definitions/Package.
+          schema = dict(load("pcm.schema.json"), **{"$ref": "#/definitions/Package"})
+          jsonschema.validate(load("build/metadata.json"), schema)
+          print("metadata.json matches KiCad's PCM schema")
+          EOF
+          rm plugin.schema.json pcm.schema.json
 
       - name: Upload package
         uses: actions/upload-artifact@v4

@@ -139,11 +139,13 @@ The package is built by GitHub Actions only. Every push and pull request:
 
 1. checks that `src/` compiles and holds only Python files, and that `plugin.json` and
    `packaging/metadata.json` have the same identifier;
-2. validates both files against KiCad's JSON schemas;
-3. builds `kicad-jlc-<version>.zip` (`metadata.json`, the plugin under `plugins/`, and
-   `resources/icon.png`) and uploads it as the `kicad-jlc-package` artifact.
+2. builds `kicad-jlc-<version>.zip` (`metadata.json`, the plugin under `plugins/`, and
+   `resources/icon.png`);
+3. validates the built `plugin.json` and `metadata.json` against KiCad's JSON schemas and
+   uploads the zip as the `kicad-jlc-package` artifact.
 
-Untagged builds get version `0.0.0-dev.<run number>`. Pushing a tag such as `v0.1.0` builds
+KiCad only accepts numeric versions (`1`, `1.2` or `1.2.3`; no `-dev`/`-rc` suffixes).
+Untagged builds get version `0.0.<run number>`. Pushing a tag such as `v0.1.0` builds
 version `0.1.0` and attaches the zip to a GitHub release for that tag.
 
 ## Development

@@ -56,6 +56,9 @@ from settings import Settings, plugin_identifier  # noqa: E402
 from windows import message, show_modal  # noqa: E402
 
 KICAD_ERRORS = (ApiError, KiCadConnectionError)
+# How long to wait for a reply from KiCad. kipy's default (2 s) is too short
+# for reading every footprint of a large board, especially on Windows.
+KICAD_TIMEOUT_MS = 30_000
 # KiCad action that scrolls the board view to the current selection.
 CENTER_ON_SELECTION_ACTION = "common.Control.centerSelection"
 # Settings key: the keys of the columns the user chose to show, in order.
@@ -225,7 +228,9 @@ class ComponentsFrame(wx.Frame):
         """Read the footprints from KiCad again and rebuild the table."""
         selected = {c.key for c in self.selected_components()}
         try:
-            self.all_components = get_components(self.board.get_footprints())
+            with wx.BusyCursor():  # reading a large board can take a few seconds
+                footprints = self.board.get_footprints()
+            self.all_components = get_components(footprints)
         except KICAD_ERRORS as e:
             self.show_message(f"Could not read the board from KiCad.\n\n{e}", wx.ICON_ERROR)
             return
@@ -700,7 +705,7 @@ def main() -> int:
     app = wx.App()  # noqa: F841 - must exist before creating any window
 
     try:
-        kicad = KiCad()
+        kicad = KiCad(timeout_ms=KICAD_TIMEOUT_MS)
         board = kicad.get_board()
     except KICAD_ERRORS as e:
         show_error(f"Could not read the board from KiCad.\n\n{e}")
