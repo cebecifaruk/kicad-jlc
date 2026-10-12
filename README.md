@@ -61,6 +61,22 @@ every component (footprint) on the board.
   keyword search (prefilled from the component), filters for category, package, library type
   and stock, results with product photos, and a details preview. **Assign** writes the part
   number to the footprints' `LCSC` field (creating a hidden one if needed) in one undoable step.
+- **Pricing Calculator**: **Pricing Calculator...** opens a window that prices the board for a
+  production run. Enter the **PCB Quantity** (remembered); components are grouped by LCSC part
+  number and each row shows the part number, its components (e.g. `R1, R2`), the quantity per
+  board, the total quantity (per board × PCB quantity), the selected price level, the unit
+  price and the line total, with the **Total Price** (and price per PCB) below. Changing the
+  PCB quantity recalculates everything immediately.
+  - Each part number is priced **once, for its total quantity**: if R1 and R2 share a part,
+    100 boards need 200 pieces, priced at the 200-piece price level, not twice at the
+    100-piece one. The price level is the highest JLCPCB price break whose minimum is at or
+    below the total quantity.
+  - If fewer pieces are needed than the part's first price break (e.g. a 50-piece minimum),
+    the minimum is priced, and the row says so. Rows also note parts with too little stock.
+  - DNP components and components excluded from the BOM aren't counted (they are listed
+    below the table). Components without an LCSC part number, with an invalid one, or whose
+    part JLCPCB doesn't know are shown in yellow and left out of the total, which says so.
+  - Selecting rows highlights their footprints on the board; double-click opens the part.
 
 All part data comes from live requests to JLCPCB's public website endpoints (search, part
 details and images); there is no downloaded parts database. These endpoints are not an
@@ -69,10 +85,11 @@ official API and may change without notice. Results are cached only while the wi
 Only the field named `LCSC` is read and written. Other fields such as `LCSC Part #` are shown
 as ordinary custom field columns.
 
-The shown columns and their order, column widths, the filter, the "center view" option and the
-last export folder are remembered in `settings.json` inside KiCad's settings folder for this
-plugin (on macOS: `~/Library/Preferences/kicad/10.0/plugins/com.github.cebecifaruk.kicad-jlc/`).
-Delete that file to go back to the defaults.
+The shown columns and their order, column widths, the filter, the "center view" option, the
+last export folder and the pricing calculator's PCB quantity are remembered in `settings.json`
+inside KiCad's settings folder for this plugin (on macOS:
+`~/Library/Preferences/kicad/10.0/plugins/com.github.cebecifaruk.kicad-jlc/`). Delete that
+file to go back to the defaults.
 
 ## Install
 
@@ -104,6 +121,9 @@ entrypoint (`src/list_components.py`), the icons and `requirements.txt` relative
   - `lcsc_part_details.py`: the LCSC Part Detail window (opened with an LCSC part number)
   - `part_details.py`: part details panel with photos, plus shared UI helpers
   - `part_search.py`: the JLCPCB part search window
+  - `pricing.py`: the pricing calculation: grouping by LCSC part number, price level
+    selection and totals (no UI)
+  - `pricing_calculator.py`: the Pricing Calculator window
   - `jlcpcb_api.py`: client for JLCPCB's part search, part details and images
   - `board_data.py`: reads components from the board and writes LCSC fields
   - `settings.py`: remembered settings

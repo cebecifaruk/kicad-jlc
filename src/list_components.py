@@ -10,7 +10,9 @@ LCSC part (see matching.py) are shown in yellow, on both the board and the LCSC
 side. Double-clicking a row opens the LCSC Part Detail window for the part in
 its LCSC field (photos, specifications, prices); that window only depends on
 the LCSC part number. "Assign LCSC Part Number..." opens a
-JLCPCB part search. The table can be filtered and exported as CSV.
+JLCPCB part search. "Pricing Calculator..." prices the board's parts, grouped by
+LCSC part number, for a number of boards. The table can be filtered and
+exported as CSV.
 
 When launched from the PCB editor toolbar, KiCad sets the KICAD_API_SOCKET and
 KICAD_API_TOKEN environment variables, which kipy.KiCad() picks up automatically.
@@ -48,6 +50,7 @@ from component_grid import ComponentGrid  # noqa: E402
 from jlcpcb_api import JlcpcbClient, normalize_lcsc  # noqa: E402
 from lcsc_part_details import LcscPartDetailsFrame  # noqa: E402
 from part_search import PartSearchDialog  # noqa: E402
+from pricing_calculator import PricingCalculatorFrame  # noqa: E402
 from remote_data import RemoteDetailsLoader  # noqa: E402
 from settings import Settings, plugin_identifier  # noqa: E402
 from windows import message, show_modal  # noqa: E402
@@ -103,6 +106,7 @@ class ComponentsFrame(wx.Frame):
         self.sort_key = "reference"
         self.sort_ascending = True
         self.details: Optional[LcscPartDetailsFrame] = None
+        self.pricing: Optional[PricingCalculatorFrame] = None
         # Selection changes arrive in bursts; highlight once, shortly after the last.
         self._selection_timer = wx.CallLater(150, self._on_selection_settled)
         self._selection_timer.Stop()
@@ -136,6 +140,11 @@ class ComponentsFrame(wx.Frame):
             "Show the JLCPCB details of the selected row's LCSC part (or double-click a row)"
         )
         self.details_button.Bind(wx.EVT_BUTTON, lambda _e: self.open_details_for_selection())
+        pricing_button = wx.Button(panel, label="Pricing Calculator...")
+        pricing_button.SetToolTip(
+            "Price the board's parts, grouped by LCSC part number, for a number of PCBs"
+        )
+        pricing_button.Bind(wx.EVT_BUTTON, lambda _e: self.show_pricing())
         columns_button = wx.Button(panel, label="Columns...")
         columns_button.SetToolTip("Choose which columns are shown and in which order")
         columns_button.Bind(wx.EVT_BUTTON, lambda _e: self.choose_columns())
@@ -165,6 +174,7 @@ class ComponentsFrame(wx.Frame):
         for item, gap in (
             (self.assign_button, 4),
             (self.details_button, 16),
+            (pricing_button, 16),
             (columns_button, 4),
             (export_button, 4),
             (reload_button, 16),
@@ -226,6 +236,8 @@ class ComponentsFrame(wx.Frame):
         self.remote.request(c.lcsc for c in self.all_components)
         self._update_available_columns()
         self.rebuild_columns(selected)
+        if self.pricing:
+            self.pricing.refresh()
 
     @property
     def shown_column_keys(self) -> List[str]:
@@ -508,6 +520,8 @@ class ComponentsFrame(wx.Frame):
     def _after_remote_data(self) -> None:
         if not self:
             return
+        if self.pricing:
+            self.pricing.refresh()  # prices of newly loaded parts
         selected = {c.key for c in self.selected_components()}
         # Specifications and raw fields of newly loaded parts become available
         # columns; rebuild if one of them is a chosen column.
@@ -571,9 +585,10 @@ class ComponentsFrame(wx.Frame):
             self._selection_timer.Start(150)
 
     def _on_selection_settled(self) -> None:
-        self._highlight(self.selected_components())
+        self.highlight(self.selected_components())
 
-    def _highlight(self, components: List[Component]) -> None:
+    def highlight(self, components: List[Component]) -> None:
+        """Select these footprints on the board (and center the view on them if ticked)."""
         try:
             self.board.clear_selection()
             if components:
@@ -610,6 +625,29 @@ class ComponentsFrame(wx.Frame):
         x = min(rect.GetRight() + 10, display.GetRight() - width)
         y = max(display.GetTop(), min(rect.GetTop(), display.GetBottom() - height))
         self.details.SetPosition((max(display.GetLeft(), x), y))
+
+    # ---- Pricing Calculator ---------------------------------------------
+
+    def show_pricing(self) -> None:
+        """Open (or bring to the front) the Pricing Calculator window."""
+        if not self.pricing:
+            self.pricing = PricingCalculatorFrame(self)
+            self._place_below(self.pricing)
+        else:
+            self.pricing.refresh()
+        self.pricing.Show()
+        if self.pricing.IsIconized():
+            self.pricing.Iconize(False)
+        self.pricing.Raise()
+
+    def _place_below(self, window: wx.Window) -> None:
+        """Put `window` a little below and to the right of the table, kept on screen."""
+        display = wx.Display(max(0, wx.Display.GetFromWindow(self))).GetClientArea()
+        rect = self.GetScreenRect()
+        width, height = window.GetSize()
+        x = min(rect.GetLeft() + 40, display.GetRight() - width)
+        y = min(rect.GetTop() + 60, display.GetBottom() - height)
+        window.SetPosition((max(display.GetLeft(), x), max(display.GetTop(), y)))
 
     # ---- Assigning ------------------------------------------------------
 

@@ -50,6 +50,7 @@ class Component:
     lcsc: str
     # Custom field name -> value, e.g. {"MPN": "RC0402FR-0710KL"}
     fields: Dict[str, str] = field(default_factory=dict)
+    exclude_from_bom: bool = False
 
     @property
     def package(self) -> str:
@@ -108,6 +109,7 @@ def to_component(fp: FootprintInstance) -> Component:
         dnp=fp.attributes.do_not_populate,
         lcsc=lcsc,
         fields=custom,
+        exclude_from_bom=fp.attributes.exclude_from_bill_of_materials,
     )
 
 
