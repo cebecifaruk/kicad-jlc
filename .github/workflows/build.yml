@@ -1,0 +1,99 @@
+name: Build KiCad package
+
+# Builds the zip that KiCad's Plugin and Content Manager installs
+# (Install from File...). Archive layout:
+#   metadata.json        package metadata: packaging/metadata.json with the version filled in
+#   plugins/             the plugin, laid out as in the repository:
+#     plugin.json, requirements.txt, icons/, src/*.py
+#   resources/icon.png   64x64 icon shown in the Plugin and Content Manager
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write # needed to attach the package to a GitHub release
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Check sources
+        env:
+          PYTHONPYCACHEPREFIX: ${{ runner.temp }}/pycache # keep __pycache__ out of src/
+        run: |
+          python -m compileall -q src
+          others=$(find src -type f ! -name '*.py')
+          if [ -n "$others" ]; then
+            echo "::error::src/ must contain only Python files: $others"
+            exit 1
+          fi
+          plugin_id=$(jq -r .identifier plugin.json)
+          package_id=$(jq -r .identifier packaging/metadata.json)
+          if [ "$plugin_id" != "$package_id" ]; then
+            echo "::error::Identifier mismatch: plugin.json has $plugin_id, packaging/metadata.json has $package_id"
+            exit 1
+          fi
+
+      - name: Validate against KiCad's schemas
+        run: |
+          pip install jsonschema
+          curl -fsSL -o plugin.schema.json https://gitlab.com/kicad/code/kicad/-/raw/master/api/schemas/api.v1.schema.json
+          curl -fsSL -o pcm.schema.json https://go.kicad.org/pcm/schemas/v2
+          python - <<'EOF'
+          import json, jsonschema
+          load = lambda path: json.load(open(path, encoding="utf-8"))
+          jsonschema.validate(load("plugin.json"), load("plugin.schema.json"))
+          print("plugin.json matches KiCad's plugin schema")
+          # The PCM schema describes a single package under definitions/Package.
+          schema = dict(load("pcm.schema.json"), **{"$ref": "#/definitions/Package"})
+          metadata = load("packaging/metadata.json")
+          metadata["versions"][0].update(version="0.0.0", install_size=0)
+          jsonschema.validate(metadata, schema)
+          print("packaging/metadata.json matches KiCad's PCM schema")
+          EOF
+          rm plugin.schema.json pcm.schema.json
+
+      - name: Build package
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="0.0.0-dev.${GITHUB_RUN_NUMBER}"
+          fi
+
+          rm -rf build && mkdir -p build/plugins build/resources dist
+          cp plugin.json requirements.txt build/plugins/
+          cp -R icons build/plugins/icons
+          mkdir build/plugins/src && cp src/*.py build/plugins/src/
+          cp packaging/icon.png build/resources/icon.png
+
+          # An archive describes exactly one version, with its installed size in bytes.
+          SIZE=$(find build -type f -exec cat {} + | wc -c | tr -d ' ')
+          jq --arg version "$VERSION" --argjson size "$SIZE" \
+            '.versions = [.versions[0] + {version: $version, install_size: $size}]' \
+            packaging/metadata.json > build/metadata.json
+
+          (cd build && zip -qr "../dist/kicad-jlc-${VERSION}.zip" metadata.json plugins resources)
+          unzip -l "dist/kicad-jlc-${VERSION}.zip"
+
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: kicad-jlc-package
+          path: dist/*.zip
+
+      - name: Attach package to release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.zip

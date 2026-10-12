@@ -1,0 +1,30 @@
+{
+    "$schema": "https://go.kicad.org/api/schemas/v1",
+    "identifier": "com.github.cebecifaruk.kicad-jlc",
+    "name": "KiCad JLC",
+    "description": "Lists the board's components and assigns JLCPCB/LCSC part numbers from a JLCPCB parts search",
+    "runtime": {
+        "type": "python",
+        "min_version": "3.9"
+    },
+    "actions": [
+        {
+            "identifier": "kicad-jlc",
+            "name": "KiCad JLC",
+            "description": "Shows all components and lets you assign LCSC part numbers",
+            "show-button": true,
+            "scopes": [
+                "pcb"
+            ],
+            "entrypoint": "src/list_components.py",
+            "icons-light": [
+                "icons/lcsc_24.png",
+                "icons/lcsc_48.png"
+            ],
+            "icons-dark": [
+                "icons/lcsc_24.png",
+                "icons/lcsc_48.png"
+            ]
+        }
+    ]
+}

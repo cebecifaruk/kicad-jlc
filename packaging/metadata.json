@@ -1,0 +1,26 @@
+{
+    "$schema": "https://go.kicad.org/pcm/schemas/v2",
+    "name": "KiCad JLC",
+    "description": "Assign JLCPCB/LCSC part numbers to your board's components with a live JLCPCB part search.",
+    "description_full": "Lists every component on the board in a configurable table, with columns loaded live from JLCPCB (value, package, stock, price breaks, specifications). Search JLCPCB's parts catalogue with filters and product photos, and write the chosen part number to the components' LCSC field. Selecting rows highlights the footprints on the board, and the table can be exported as CSV.\n\nRequires KiCad 10 with the API enabled (Preferences > Plugins > Enable KiCad API). Part data comes from JLCPCB's public website endpoints, which are not an official API and may change.",
+    "identifier": "com.github.cebecifaruk.kicad-jlc",
+    "type": "plugin",
+    "author": {
+        "name": "Faruk CEBECI",
+        "contact": {
+            "github": "https://github.com/cebecifaruk"
+        }
+    },
+    "license": "MIT",
+    "resources": {
+        "homepage": "https://github.com/cebecifaruk/kicad-jlc"
+    },
+    "versions": [
+        {
+            "version": "VERSION_PLACEHOLDER",
+            "status": "testing",
+            "kicad_version": "10.0",
+            "runtime": "ipc"
+        }
+    ]
+}
